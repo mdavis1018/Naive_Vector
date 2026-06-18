@@ -1,5 +1,8 @@
-#include <utility>
+#include <cstddef>
 #include <algorithm>
+#include <utility>
+#include <initializer_list>
+#include <iterator>
 
 
 
@@ -55,15 +58,6 @@ class Vector
       }
 
       /**
-       * @brief Returns const pointer to beginning of Vector
-       * @return Type_t * to start of memory
-      */
-      const Type_t *cbegin() const 
-      {
-         return begin();
-      }
-
-      /**
        * @brief Returns pointer to end of Vector
        * @return Type_t* to end of memory
       */
@@ -106,12 +100,12 @@ class Vector
       */
       Vector(std::size_t aNumOfElements, const Type_t* aInit) :
          mStart(new Type_t[aNumOfElements]),
-         mNumberOfElements(aNumOfElements),
+         mNumOfElements(aNumOfElements),
          mCapacity(aNumOfElements)
       {
          try 
          {
-            std::fill(begin(), end(), aInit)
+            std::fill(begin(), end(), aInit);
          }
          catch (...)
          {
@@ -132,7 +126,7 @@ class Vector
       {
          try 
          {
-            std::copy(aOther.begin(), aOther.end(), begin())
+            std::copy(aOther.begin(), aOther.end(), begin());
          }
          catch (...)
          {
@@ -164,7 +158,7 @@ class Vector
       {
          try 
          {
-            std::copy(aListOfObjects.begin(), aListOfObjects.end(), begin())
+            std::copy(aListOfObjects.begin(), aListOfObjects.end(), begin());
          }
          catch (...)
          {
@@ -173,9 +167,270 @@ class Vector
          }
       }
 
-      
+      /**
+       * @brief Destructor
+      */
+      ~Vector()
+      {
+         delete[] mStart;
+      }
+
+      /**
+       * @brief Swaps two vectors 
+       * @param[in] aOther is a lhs Vector
+      */
+      void swap(Vector &aOther) noexcept
+      {
+         std::swap(aOther.mStart, mStart);
+         std::swap(aOther.mNumOfElements, mNumOfElements);
+         std::swap(aOther.mCapacity, mCapacity);
+      }
+
+      /**
+       * @brief Assignment operator (LHS Value)
+       * @param[in] aOther is a Vector
+      */
+      Vector& operator=(const Vector &aOther)
+      {
+         Vector(aOther).swap(*this);
+         return *this;
+      }
+
+      /**
+       * @brief Assignment operator (RHS Value)
+       * @param[in] aOther is a Vector
+      */
+      Vector& operator=(Vector &&aOther)
+      {
+         Vector(std::move(aOther)).swap(*this);
+         return *this;
+      }
+
+      /**
+       * @brief [] Operator
+       * @param[in] aIndex is a std::size_t
+       * @return Type_t& 
+      */
+      Type_t& operator[](std::size_t aIndex)
+      {
+         return mStart[aIndex];
+      }
+
+      /**
+       * @brief [] Operator
+       * @param[in] aIndex is a std::size_t
+       * @return const Type_t& 
+      */
+      const Type_t& operator[](std::size_t aIndex) const
+      {
+         return mStart[aIndex];
+      }
+
+      /**
+       * @brief Returns first element in vector
+       * @return Type_t&
+      */
+      Type_t& front()
+      {
+         return (*this)[0];
+      }
+
+      /**
+       * @brief Returns first element in vector
+       * @return const Type_t&
+      */
+      const Type_t& front() const
+      {
+         return (*this)[0];
+      }
+
+      /**
+       * @brief Returns the back element in vector
+       * @return Type_t&
+      */
+      Type_t& back()
+      {
+         (*this)[size() - 1];
+      }
+
+      /**
+       * @brief Returns the back element in vector
+       * @return Type_t&
+      */
+      const Type_t& back() const 
+      {
+         (*this)[size() - 1];
+      }
+
+      /**
+       * @brief Comparison operator for two Vectors
+       * @param[in] aOther is a Vector
+       * @return true if equal else false
+      */
+      bool operator==(const Vector& aOther) const
+      {
+         return (size() == aOther.size() && std::equal(begin(), end(), aOther.begin()));       
+      }
+
+      /**
+       * @brief Comparison operator for two Vectors
+       * @param[in] aOther is a Vector
+       * @return true if equal else false
+      */
+      bool operator!=(const Vector& aOther) const
+      {
+         return !(*this == aOther);       
+      }
+
+      /**
+       * @brief Adds element to the back of the vector
+       * @param[in] aValue is a const Type_t
+      */ 
+      void push_back(const Type_t& aValue)
+      {
+         if (full())
+         {
+            grow();
+         }
+
+         mStart[size()] = aValue;
+         ++mNumOfElements;
+      }
+
+      /**
+       * @brief Adds element to the back of the vector
+       * @param[in] aValue is a RHS
+      */ 
+      void push_back(Type_t &&aValue)
+      {
+         if (full())
+         {
+            grow();
+         }
+
+         mStart[size()] = std::move(aValue);
+         ++mNumOfElements;
+
+      }
+
+      /**
+       * @brief Constructs a Type_t element within the mem block of the vector
+       * 
+      */
+      template<class ... Args>
+      Type_t& emplace_back(Args &&...aListOfArgs)
+      {
+         if (full())
+         {
+            grow();
+         }
+
+         mStart[size()] = std::move(Type_t(std::forward<Args>(aListOfArgs)...));
+         ++mNumOfElements;
+         return back();
+      }
+
+      /**
+       * @brief Resizes the container to accomadate a certain number of elements
+       * @param[in] aNumOfElements is a std::size_t
+      */
+      void resize(std::size_t aNumOfElements)
+      {
+         if (aNumOfElements <= capacity())
+         {
+
+         }
+         else
+         {
+            Type_t* tNewBlock = new Type_t[aNumOfElements];
+
+            if constexpr(std::is_nothrow_move_assignable_v<Type_t>)
+            {
+               std::move(begin(), end(), tNewBlock);
+            }
+            else try 
+            {
+               std::copy(begin(), end(), tNewBlock);
+            }
+            catch (...)
+            {
+               delete[] tNewBlock;
+               throw;
+            }
+
+            delete[] mStart;
+            mStart = tNewBlock;
+            mCapacity = aNumOfElements;
+         }
+      }
+
+      /**
+       * @brief Insert a list of elements from any other container
+       * @details We use iterators so this method can work with other containers. It 
+       * takes a starting position to start the insertion from inserts values from aFirst to aLast from
+       * other container into our Vector
+       * 
+      */
+      template<class Iterator_t>
+      Type_t* insert(const Type_t *aPosition, Iterator_t aFirst, Iterator_t aLast)
+      {
+         Type_t *tPosition = const_cast<Type_t*>(aPosition);
+
+         const std::size_t tRemaining = capacity() - size();
+         const std::size_t tDistance = std::distance(aFirst, aLast);
+
+         if (tRemaining < tDistance)
+         {
+            // re-compute index
+            std::size_t tIndex = std::distance(begin(), tPosition);
+            resize(capacity() + tDistance - tRemaining);
+            tPosition = std::next(begin(), tIndex);
+         }
+
+         // shifts existing elements to the right
+         std::copy_backward(tPosition, end(), end() + tDistance);
+         
+         // regular copy
+         std::copy(aFirst, aLast, tPosition);
+         mNumOfElements += tDistance;
+         return tPosition;
+      }
+
+      /**
+       * @brief Erase an element from within the container
+       * @param[in] aPosition is a const iterator
+      */
+      Type_t* erase(const Type_t* aPosition)
+      {
+         Type_t* tPosition = const_cast<Type_t*>(aPosition);
+
+         if (tPosition == end())
+         {
+            return tPosition;
+         }
+         else
+         {
+            // Copies [aPosition + 1, end()] elements back into a position
+            std::copy(std::next(aPosition), end(), aPosition);
+
+            // there will be two dupes at the end of the vector, null out final element
+            *std::prev(end()) = {};
+            --mNumOfElements;
+            return aPosition;
+         }
+      }
 
       private:
+
+      /**
+       * @brief Doubles the size of the vector
+       * 
+      */
+      void grow() 
+      {
+         resize(capacity() * 2);
+      }
+
       /* Pointer to the start of the vector */
       Type_t *mStart;
 
@@ -194,3 +449,9 @@ class Vector
          return size() == capacity();
       }
 };
+
+
+int main()
+{
+   return 0;
+}
