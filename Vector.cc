@@ -174,7 +174,8 @@ class Vector
       */
       ~Vector()
       {
-         delete[] mStart;
+         std::__destroy(begin(), end());
+         std::free(mStart);
       }
 
       /**
@@ -466,7 +467,7 @@ class Vector
       */
       void grow() 
       {
-         resize(capacity() * 2);
+         reserve(capacity() ? capacity() * 2 : 16);
       }
 
       /* Pointer to the start of the vector */
