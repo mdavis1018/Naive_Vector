@@ -371,59 +371,135 @@ class Vector
       }
 
       /**
-       * @brief Insert a list of elements from any other container
-       * @details We use iterators so this method can work with other containers. It 
-       * takes a starting position to start the insertion from inserts values from aFirst to aLast from
-       * other container into our Vector
-       * 
-      */
+       * @brief Insert a list of elements from another container.
+       *
+       * @details Uses iterators so this method can insert values from any compatible
+       * container. Inserts the range [aFirst, aLast) starting at aPosition.
+       */
       template<class Iterator_t>
-      Type_t* insert(const Type_t *aPosition, Iterator_t aFirst, Iterator_t aLast)
+      Type_t* insert(const Type_t* aPosition, Iterator_t aFirst, Iterator_t aLast)
       {
-         Type_t *tPosition = const_cast<Type_t*>(aPosition);
+         Type_t* tPosition = const_cast<Type_t*>(aPosition);
 
-         const std::size_t tRemaining = capacity() - size();
          const std::size_t tDistance = std::distance(aFirst, aLast);
 
-         if (tRemaining < tDistance)
+         // Nothing to insert.
+         if (tDistance == 0)
          {
-            // re-compute index
-            std::size_t tIndex = std::distance(begin(), tPosition);
-            resize(capacity() + tDistance - tRemaining);
+            return tPosition;
+         }
+
+         // Save the insertion index because reserve/reallocation may invalidate pointers.
+         const std::size_t tIndex = std::distance(begin(), tPosition);
+
+         // Number of existing elements after the insertion position.
+         const std::size_t tElementsAfter = std::distance(tPosition, end());
+
+         // Make sure we have enough capacity for the new elements.
+         if (capacity() - size() < tDistance)
+         {
+            reserve(size() + tDistance);
+
+            // Rebuild tPosition after reserve(), since reserve may reallocate.
             tPosition = std::next(begin(), tIndex);
          }
 
-         // shifts existing elements to the right
-         std::copy_backward(tPosition, end(), end() + tDistance);
-         
-         // regular copy
+         Type_t* tOldEnd = end();
+         Type_t* tNewEnd = tOldEnd + tDistance;
+
+         /*
+         * We need to create a gap of tDistance elements at tPosition.
+         *
+         * Before:
+         * [ A B C D _ _ ]
+         *       ^
+         *       tPosition
+         *
+         * Insert X Y:
+         *
+         * After shifting:
+         * [ A B _ _ C D ]
+         *
+         * Then copy X Y into the gap:
+         * [ A B X Y C D ]
+         */
+
+         if (tElementsAfter > 0)
+         {
+            /*
+            * First move/copy the last tDistance elements into uninitialized memory
+            * at the end of the storage.
+            *
+            * This is needed because positions past the old end() do not contain
+            * constructed Type_t objects yet.
+            */
+            const std::size_t tUninitializedCount =
+               std::min(tDistance, tElementsAfter);
+
+            Type_t* tUninitializedStart = tOldEnd - tUninitializedCount;
+
+            if constexpr (std::is_nothrow_move_constructible_v<Type_t>)
+            {
+               std::uninitialized_move(tUninitializedStart, tOldEnd,
+                                       tUninitializedStart + tDistance);
+            }
+            else
+            {
+               std::uninitialized_copy(tUninitializedStart, tOldEnd,
+                                       tUninitializedStart + tDistance);
+            }
+
+            /*
+            * Now shift the remaining already-constructed elements backward.
+            *
+            * copy_backward/move_backward is used because the source and destination
+            * ranges overlap, and we are shifting to the right.
+            */
+            Type_t* tMoveEnd = tOldEnd - tUninitializedCount;
+
+            std::move_backward(tPosition, tMoveEnd, tMoveEnd + tDistance);
+         }
+
+         /*
+         * Copy the new elements into the gap.
+         *
+         * These positions already contain constructed objects, so regular copy
+         * assignment is appropriate here.
+         */
          std::copy(aFirst, aLast, tPosition);
+
          mNumOfElements += tDistance;
+
          return tPosition;
       }
 
       /**
-       * @brief Erase an element from within the container
-       * @param[in] aPosition is a const iterator
-      */
+       * @brief Erase one element from the container.
+       * @param[in] aPosition Position of the element to erase.
+       * @return Pointer to the element that shifted into the erased position,
+       *         or end() if the erased element was the last element.
+       */
       Type_t* erase(const Type_t* aPosition)
       {
          Type_t* tPosition = const_cast<Type_t*>(aPosition);
 
+         // Erasing end() is a no-op.
          if (tPosition == end())
          {
             return tPosition;
          }
-         else
-         {
-            // Copies [aPosition + 1, end()] elements back into a position
-            std::copy(std::next(aPosition), end(), aPosition);
 
-            // there will be two dupes at the end of the vector, null out final element
-            *std::prev(end()) = {};
-            --mNumOfElements;
-            return aPosition;
-         }
+         // Shift every element after tPosition one slot to the left.
+         std::copy(std::next(tPosition), end(), tPosition);
+
+         // Clear the old duplicate final element.
+         *std::prev(end()) = {};
+
+         // Shrink logical size.
+         --mNumOfElements;
+
+         // Return iterator/pointer to the next valid element.
+         return tPosition;
       }
 
       /**
