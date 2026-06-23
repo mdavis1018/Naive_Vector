@@ -93,23 +93,25 @@ class Vector
 
       /**
        * @brief Overloaded Ctr
+       * @details To avoid default construction plus copy operation we malloc the necessary size and
+       * then construct our aInit objects directly in the memory block
        * @param[in] aNumOfElements is a std::size_t containing num of elements to init
        * @param[in] aInit is a const Type_t to initilize all slots in Vector to
        * @return fully constucted vector
        * @throws If exception occurs when filling vector memory block
       */
       Vector(std::size_t aNumOfElements, const Type_t* aInit) :
-         mStart(new Type_t[aNumOfElements]),
+         mStart(static_cast<Type_t*>(std::malloc(aNumOfElements * sizeof(Type_t)))),
          mNumOfElements(aNumOfElements),
          mCapacity(aNumOfElements)
       {
          try 
          {
-            std::fill(begin(), end(), aInit);
+            std::uninitialized_fill(begin(), end(), aInit);
          }
          catch (...)
          {
-            delete[] mStart;
+            std::free(mStart);
             throw;
          }
       }         
@@ -120,17 +122,17 @@ class Vector
        * @return fully constructed Vector
       */
       Vector(const Vector &aOther) :
-         mStart(new Type_t[aOther.size()]),
+         mStart(static_cast<Type_t*>(std::malloc(aOther.size() * sizeof(Type_t)))),
          mNumOfElements(aOther.size()),
          mCapacity(aOther.capacity())
       {
          try 
          {
-            std::copy(aOther.begin(), aOther.end(), begin());
+            std::uninitialized_copy(aOther.begin(), aOther.end(), begin());
          }
          catch (...)
          {
-            delete[] mStart;
+            std::free(mStart);
             throw;
          }
       }
@@ -293,7 +295,7 @@ class Vector
             grow();
          }
 
-         mStart[size()] = aValue;
+         std::__construct_at(end(), aValue);
          ++mNumOfElements;
       }
 
@@ -308,9 +310,8 @@ class Vector
             grow();
          }
 
-         mStart[size()] = std::move(aValue);
+         std::__construct_at(end(), std::move(aValue));
          ++mNumOfElements;
-
       }
 
       /**
@@ -325,13 +326,14 @@ class Vector
             grow();
          }
 
-         mStart[size()] = std::move(Type_t(std::forward<Args>(aListOfArgs)...));
+         std::__construct_at(end(), std::move(Type_t(std::forward<Args>(aListOfArgs)...)));
          ++mNumOfElements;
          return back();
       }
 
       /**
        * @brief Resizes the container to accomadate a certain number of elements
+       * @details Initializes excess space with default Type_t
        * @param[in] aNumOfElements is a std::size_t
       */
       void resize(std::size_t aNumOfElements)
@@ -342,24 +344,27 @@ class Vector
          }
          else
          {
-            Type_t* tNewBlock = new Type_t[aNumOfElements];
+            Type_t* tNewBlock = std::malloc(aNumOfElements * sizeof(Type_t));
 
             if constexpr(std::is_nothrow_move_assignable_v<Type_t>)
             {
-               std::move(begin(), end(), tNewBlock);
+               std::uninitialized_move(begin(), end(), tNewBlock);
             }
             else try 
             {
-               std::copy(begin(), end(), tNewBlock);
+               std::uninitialized_copy(begin(), end(), tNewBlock);
             }
             catch (...)
             {
-               delete[] tNewBlock;
+               std::free(tNewBlock);
                throw;
             }
 
-            delete[] mStart;
+            std::uninitialized_fill(tNewBlock + size(), tNewBlock + capacity(), Type_t{});
+            std::destroy(begin(), end());
+            std::free(mStart);
             mStart = tNewBlock;
+            mNumOfElements = aNumOfElements;
             mCapacity = aNumOfElements;
          }
       }
@@ -419,6 +424,39 @@ class Vector
             return aPosition;
          }
       }
+
+      /**
+       * @brief Adds more storage to container to accomadate more Type_t objects
+       * @details Allocates a continguous block of memory of size aNewCap and moves/copies
+       * over current objects from container into new space
+       * @param[in] aNewCap is a std::size_t containing the new size of container
+      */
+      void reserve(std::size_t aNewCap)
+      {
+         if (aNewCap > capacity())
+         {
+            Type_t* tStart = static_cast<Type_t*>(std::malloc(aNewCap * sizeof(Type_t)));
+            if constexpr(std::is_nothrow_move_assignable_v<Type_t>) 
+            {
+               std::uninitialized_move(begin(), end(), tStart);         
+            } 
+            else try 
+            {
+               std::uninitialized_copy(begin(), end(), tStart);
+            } 
+            catch (...) 
+            {
+               std::free(tStart);
+               throw;
+            }
+         
+            std::destroy(begin(), end());
+            std::free(mStart);
+            mStart = tStart;
+            mCapacity = aNewCap;
+         }
+      }
+
 
       private:
 
